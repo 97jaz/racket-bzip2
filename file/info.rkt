@@ -1,3 +1,3 @@
 #lang info
 
-(define scribblings '(["scribblings/collections.scrbl" () ("Compression and Decompression")]))
+(define scribblings '(["scribblings/bzip2.scrbl" () ("Compression and Decompression")]))
