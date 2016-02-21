@@ -1,0 +1,8 @@
+.DS_Store
+compiled/
+*~
+.#*
+\#*
+**/scribblings/*.css
+**/scribblings/*.js
+**/scribblings/*.html
