@@ -16,25 +16,14 @@
 (define (sort-block! blk)
   (match-define (struct* block ([data data] [fmap fmap] [mtfv quad] [len blen])) blk)
   (define ftab (make-vector 65537 0))
-  (define work-factor 30)
 
-  (cond [(and #f (< blen 10000))
-         (fallback-sort! data fmap ftab blen)]
-        [else
-         (define initial-budget (* blen (quotient (sub1 work-factor) 3)))
-         (define budget-box (box initial-budget))
-
-         (let/ec exit
-           (main-sort! data fmap quad ftab blen budget-box exit))
-
-         (when (< (unbox budget-box) 0)
-           (fallback-sort! data fmap ftab blen))])
+  (main-sort! data fmap quad ftab blen)
 
   (for/first ([i (in-range blen)]
               #:when (zero? (vector-ref fmap i)))
     i))
 
-(define (main-sort! data fmap quad ftab blen budget-box exit)
+(define (main-sort! data fmap quad ftab blen)
   (define big-done (make-vector 256 #f))
   (define copy-start (make-vector 256 0))
   (define copy-end (make-vector 256 0))
@@ -45,13 +34,11 @@
 
   (for ([i (in-range 256)])
     (define ss (vector-ref running-order i))
-    (main-loop1! ss data fmap quad ftab blen budget-box exit)
+    (main-loop1! ss data fmap quad ftab blen)
     (main-loop2! ss copy-start copy-end big-done data fmap ftab blen)
     (vector-set! big-done ss #t)
     (when (< i 255)
       (main-loop3! ss fmap quad ftab blen))))
-
-(define fallback-sort! main-sort!)
 
   
 ;; initializes data structures
@@ -112,7 +99,7 @@
 
   running-order)
 
-(define (main-loop1! ss data fmap quad ftab blen budget-box exit)
+(define (main-loop1! ss data fmap quad ftab blen)
   (for ([j (in-range 256)])
     (unless (= j ss)
       (define sb (+ (ash32 ss 8) j))
@@ -122,7 +109,7 @@
         (define hi (sub1 (& (vector-ref ftab (add1 sb)) CLEARMASK)))
         
         (when (> hi lo)
-          (main-qsort3! data fmap quad blen lo hi RADIX budget-box exit)))
+          (main-qsort3! data fmap quad blen lo hi RADIX)))
       
       (vector-set! ftab sb (bitwise-ior (vector-ref ftab sb) SETMASK)))))
 
@@ -175,12 +162,10 @@
       (vector-set! quad (+ a2update blen) qval))))
 
 
-(define (main-qsort3! data fmap quad blen lo hi d budget-box exit)
+(define (main-qsort3! data fmap quad blen lo hi d)
   (cond [(or (< (- hi lo) SMALL-THRESHOLD)
              (> d DEPTH-THRESHOLD))
-         (main-simple-sort! data fmap quad blen lo hi d budget-box exit)
-         (when (< (unbox budget-box) 0)
-           (exit))]
+         (main-simple-sort! data fmap quad blen lo hi d)]
         [else
          (define med
            (med3 (bytes-ref data (+ (vector-ref fmap lo) d))
@@ -223,7 +208,7 @@
          (define-values (unlo ltlo unhi gthi) (lo-loop lo lo hi hi))
 
          (cond [(< gthi ltlo)
-                (main-qsort3! data fmap quad blen lo hi (add1 d) budget-box exit)]
+                (main-qsort3! data fmap quad blen lo hi (add1 d))]
                [else
                 (let ([n (min (- ltlo lo) (- unlo ltlo))]
                       [m (min (- hi gthi) (- gthi unhi))])
@@ -243,11 +228,11 @@
 
                   (for-each (λ (xs)
                               (match-define (list lo hi d) xs)
-                              (main-qsort3! data fmap quad blen lo hi d budget-box exit))
+                              (main-qsort3! data fmap quad blen lo hi d))
                             sorted-args))])]))
 
                   
-(define (main-simple-sort! data fmap quad blen lo hi d budget-box exit)
+(define (main-simple-sort! data fmap quad blen lo hi d)
   (define bign (add1 (- hi lo)))
 
   (when (>= bign 2)
@@ -264,7 +249,7 @@
         (define j
           (let loop ([j i])
             (define j1 (- j h))
-            (cond [(main-gtu? (+ (vector-ref fmap j1) d) (+ v d) data quad blen budget-box)
+            (cond [(main-gtu? (+ (vector-ref fmap j1) d) (+ v d) data quad blen)
                    (vector-set! fmap j (vector-ref fmap j1))
                    (cond [(<= j1 (sub1 (+ lo h))) j1]
                          [else (loop j1)])]
@@ -273,7 +258,7 @@
 
         (vector-set! fmap j v)))))
 
-(define (main-gtu? i1 i2 data quad blen budget-box)
+(define (main-gtu? i1 i2 data quad blen)
   (let loop ([n 0] [i1 i1] [i2 i2])
     (cond [(< n 12)
            (define c1 (bytes-ref data i1))
@@ -298,7 +283,6 @@
                                     (cond [(not (= s1 s2)) (> s1 s2)]
                                           [else (inner (add1 n) (add1 i1) (add1 i2))])])]
                             [else
-                             (set-box! budget-box (sub1 (unbox budget-box)))
                              (k-loop (- k 8)
                                      (if (>= i1 blen) (- i1 blen) i1)
                                      (if (>= i2 blen) (- i2 blen) i2))]))]
